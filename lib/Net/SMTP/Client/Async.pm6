@@ -6,6 +6,7 @@ use IO::Socket::Async::SSL;
 use X::Net::SMTP::Client::Async;
 use Net::SMTP::Client::Async::Response;
 
+has Channel:D $!response .= new;
 has Channel:D $!command .= new;
 has Promise:D $!finished .= new;
 
@@ -37,7 +38,7 @@ multi method connect(::?CLASS:U:
     }
 }
 
-method connect(::?CLASS:U:
+multi method connect(::?CLASS:U:
     IO::Socket::Async::SSL $socket,
     --> Promise:D
 ) {
@@ -47,7 +48,7 @@ method connect(::?CLASS:U:
     }
 }
 
-method connect(::?CLASS:U:
+multi method connect(::?CLASS:U:
     Str :$host = 'localhost',
     Int :$port is copy,
     Bool :$secure = False,
@@ -69,7 +70,7 @@ method connect(::?CLASS:U:
         my $self = self.bless: :$socket, :secure;
         $self!begin;
     }
-)
+}
 
 method hello(::?CLASS:D: Str:D $domain = "localhost.localdomain" --> Promise:D) {
     start {
@@ -105,7 +106,7 @@ method start-tls(::?CLASS:D: Bool:D :$require-keyword = True --> Promise:D) {
             if $require-keyword and not %!keywords<STARTTLS>;
 
         # TODO Check %!keywords for STARTTLS support
-        self!STARTTLS.then: -> $p {
+        self.STARTTLS.then: -> $p {
             if $p.success {
                 $!socket-lock.protect: {
                     self.upgrade-client;
@@ -130,7 +131,12 @@ method start-tls(::?CLASS:D: Bool:D :$require-keyword = True --> Promise:D) {
     }
 }
 
-method send-message(::?CLASS:D: --> Str:D :$from, Str:D :@to, Str:D :$message) {
+method send-message(::?CLASS:D:
+    Str:D :$from,
+    Str:D :@to,
+    Str:D :$message,
+    --> Promise:D
+) {
     start sub {
         my $mail = await self.MAIL($from);
         die X::Net::SMTP::Client::Async::Send.new(response => $mail)
@@ -181,7 +187,7 @@ method !begin-listening(::?CLASS:D:) {
         }
     }
 
-    push @!taps, $!command.Supply.tap: {
+    push @!taps, $!command.Supply.tap: -> $cmd {
         $!socket-lock.protect: {
             $!socket.print: $cmd;
         }
@@ -211,7 +217,7 @@ method !end-listening(::CLASS:D:) {
 }
 
 method !end(::?CLASS:D:) {
-    $!socker-lock.protect: {
+    $!socket-lock.protect: {
         self!end-listening;
     }
 }
