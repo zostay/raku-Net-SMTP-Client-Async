@@ -106,8 +106,8 @@ method start-tls(::?CLASS:D: Bool:D :$require-keyword = True --> Promise:D) {
             if $require-keyword and not %!keywords<STARTTLS>;
 
         # TODO Check %!keywords for STARTTLS support
-        self.STARTTLS.then: -> $p {
-            if $p.success {
+        await self.STARTTLS.then: -> $p {
+            if $p.status ~~ Kept {
                 $!socket-lock.protect: {
                     self.upgrade-client;
 
@@ -118,6 +118,7 @@ method start-tls(::?CLASS:D: Bool:D :$require-keyword = True --> Promise:D) {
 
                     # pretend we are starting over with our connection
                     %!keywords = ();
+                    $!secure++;
                 }
             }
             else {

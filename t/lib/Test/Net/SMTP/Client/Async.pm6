@@ -49,6 +49,20 @@ multi handle-command('DATA', $argument, :$session) {
     }
 }
 
+multi handle-command('STARTTLS', $argument, :$session) {
+    with $session.conn {
+        .print: "250 OK\r\n";
+    }
+
+    try {
+        $session.conn = await IO::Socket::Async::SSL.upgrade-client($session.conn);
+
+        CATCH {
+            .note;
+        }
+    }
+}
+
 multi handle-data('.', :$session) {
     with $session.conn {
         .print: "250 OK\r\n";
@@ -64,7 +78,7 @@ sub start-test-server(--> Promise:D) is export {
         react {
             my $tap = do whenever IO::Socket::Async.listen('127.0.0.1', 0) -> $c {
                 my $session = class {
-                    has $.conn;
+                    has $.conn is rw;
                     has $.quit = Promise.new;
                     has $.data is rw = False;
                 }.new(:conn($c));
