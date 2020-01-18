@@ -20,7 +20,7 @@ has %.keywords;
 
 method socket(::?CLASS:D: --> Any:D) { $!socket-lock.protect: { $!socket } }
 method secure(::?CLASS:D: --> Bool:D) { $!socket-lock.protect: { $!secure } }
-method keywords(::?CLASS:D: --> Hash:D) { $!socket-lock.protect: { %!keywords } }
+method keywords(::?CLASS:D: --> Hash:D) { $!socket-lock.protect: -> { %!keywords } }
 
 my subset PortNumber of UInt where * > 0;
 
@@ -49,7 +49,7 @@ multi method connect(::?CLASS:U:
 }
 
 multi method connect(::?CLASS:U:
-    Str :$host = 'localhost',
+    Str :$host = '127.0.0.1',
     Int :$port is copy,
     Bool :$secure = False,
     *%passthru,
@@ -67,7 +67,7 @@ multi method connect(::?CLASS:U:
         }
 
         my $socket = await $socket-class.connect($host, $port, |%passthru);
-        my $self = self.bless: :$socket, :secure;
+        my $self = self.bless: :$socket, :$secure;
         $self!begin;
     }
 }
@@ -179,7 +179,7 @@ method !begin-listening(::?CLASS:D:) {
                 $<text> = [ .* ]
             $/ {
 
-            $!response.send([ val($<code>), "$<continuation>" eq "-", ~$<text> ]);
+            $!response.send([ val(~$<code>), $<continuation> eq "-", ~$<text> ]);
         }
 
         default {
