@@ -133,7 +133,7 @@ method start-tls(::?CLASS:D: Bool:D :$require-keyword = True --> Promise:D) {
 
 method send-message(::?CLASS:D:
     Str:D :$from,
-    Str:D :@to,
+    :@to where { .all ~~ Str:D },
     Str:D :$message,
     --> Promise:D
 ) {
@@ -155,7 +155,7 @@ method send-message(::?CLASS:D:
         # dot stuffing
         $message ~~ s:g/^ '.' /../;
 
-        my $data-sent = await self.send-raw-messagse($message);
+        my $data-sent = await self.send-raw-message($message);
         die X::Net::SMTP::Client::Async::Send.new(response => $data-sent)
             unless $data-sent.is-success;
 
@@ -295,7 +295,7 @@ method send-command(::?CLASS:D: Str:D $command, Str $argument? --> Promise:D) {
         my $command-line = $command;
         $command-line ~= " $_" with $argument;
 
-        $!command.send("$command $argument\r\n");
+        $!command.send("$command-line\r\n");
 
         self!handle-response;
     }

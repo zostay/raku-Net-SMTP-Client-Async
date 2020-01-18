@@ -24,6 +24,14 @@ ok $hello.is-success, 'response from SMTP server is good';
 is $hello.code, 250, 'response code is 250';
 like $hello.text, /^^ STARTTLS $$/, 'response keyword STARTTLS';
 
+my $msg = await $smtp.send-message(
+    from    => 'zostay',
+    to      => [ 'oofoof' ],
+    message => 'messages are cool\n. Dontcha know?',
+);
+ok $msg.is-success, 'repsonse from SMTP server send is good';
+is $msg.code, 250, 'response code is 250';
+
 await stop-test-server;
 
 done-testing;
