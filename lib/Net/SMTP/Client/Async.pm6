@@ -74,7 +74,6 @@ multi method connect(::?CLASS:U:
 
 method hello(::?CLASS:D: Str:D $domain = "localhost.localdomain" --> Promise:D) {
     start {
-
         # Attempt ESMTP first
         my $hello = await self.EHLO($domain);
         if $hello.code == 250 {
@@ -94,7 +93,7 @@ method hello(::?CLASS:D: Str:D $domain = "localhost.localdomain" --> Promise:D) 
     }
 }
 
-method start-tls(::?CLASS:D: Bool:D :$require-keyword = True --> Promise:D) {
+method start-tls(::?CLASS:D: Bool:D :$require-keyword = True, *%passthru --> Promise:D) {
     start {
         # If they expect an upgraded connection to be upgraded, let them catch
         # the exception here and ignore it.
@@ -109,7 +108,7 @@ method start-tls(::?CLASS:D: Bool:D :$require-keyword = True --> Promise:D) {
         await self.STARTTLS.then: -> $p {
             if $p.status ~~ Kept {
                 $!socket-lock.protect: {
-                    self.upgrade-client;
+                    self.upgrade-client(|%passthru);
 
                     # do not handle the exception, just QUIT if TLS fails
                     CATCH {
@@ -272,7 +271,7 @@ method upgrade-client(::?CLASS:D: *%passthru --> Promise:D) {
         self!end-listening;
 
         # Switch sockets
-        $!socket = await IO::Socket::Async::SSL.upgrade-client($!socket);
+        $!socket = await IO::Socket::Async::SSL.upgrade-client($!socket, |%passthru);
         $!secure = True;
 
         # Resume listening with the new socket, even on failure

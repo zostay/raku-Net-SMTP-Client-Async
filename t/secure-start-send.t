@@ -8,13 +8,13 @@ use Test::Net::SMTP::Client::Async;
 
 $*SCHEDULER.uncaught_handler = sub ($x) { $x.note }
 
-my $port = await start-test-server;
+my $port = await start-test-server(:secure);
 
-my $smtp = await Net::SMTP::Client::Async.connect(:$port);
+my $smtp = await Net::SMTP::Client::Async.connect(:$port, :secure, :insecure);
 isa-ok $smtp, Net::SMTP::Client::Async;
 
-isa-ok $smtp.socket, IO::Socket::Async;
-nok $smtp.secure, 'SMTP connection is not secure';
+isa-ok $smtp.socket, IO::Socket::Async::SSL;
+ok $smtp.secure, 'SMTP connection is secure';
 nok $smtp.keywords, 'no keywords yet';
 
 my $hello = await $smtp.hello;
@@ -24,18 +24,6 @@ is $smtp.keywords<TEST-SERVER>, $port + 42, 'running against the test server';
 
 ok $hello.is-success, 'response from SMTP server is good';
 is $hello.code, 250, 'response code is 250';
-like $hello.text, /^^ STARTTLS $$/, 'response keyword STARTTLS';
-
-my $start-tls = await $smtp.start-tls(:insecure);
-isa-ok $start-tls, Net::SMTP::Client::Async::Response;
-ok $smtp.secure, 'SMTP connection is now secure';
-nok $smtp.keywords, 'no keywords set again';
-
-my $hello-again = await $smtp.hello;
-isa-ok $hello-again, Net::SMTP::Client::Async::Response;
-isa-ok $smtp.socket, IO::Socket::Async::SSL;
-ok $smtp.keywords, 'keywords are not set again';
-is $smtp.keywords<TEST-SERVER>, $port + 42, 'running against the test server still';
 
 my $msg = await $smtp.send-message(
     from    => 'zostay',

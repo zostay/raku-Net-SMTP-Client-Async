@@ -1,100 +1,150 @@
 use v6;
 
 use IO::Socket::Async::SSL;
+use Test;
 
-multi handle-command('QUIT', $argument, :$session) {
-    $session.quit.keep;
-}
+constant KEY-FILE  = 't/ssl/key.pem';
+constant CERT-FILE = 't/ssl/cert.pem';
 
-multi handle-command('HELO', $argument, :$session) {
-    with $session.conn {
-        .print: "250 OK\r\n";
+my class TestServerSession {
+    has $.secure;
+    has $.conn;
+    has $.quit = Promise.new;
+    has $!data = False;
+
+    has $!line-tap;
+
+    method tap-lines() {
+        .close with $!line-tap;
+
+        $!line-tap = $!conn.Supply.lines.tap: -> $line {
+            if $!data {
+                self.handle-data($line);
+            }
+            else {
+                my ($command, $argument) = $line.split(' ', 2);
+                self.handle-command($command.uc, $argument);
+            }
+        }
     }
-}
-
-multi handle-command('EHLO', $argument, :$session) {
-    with $session.conn {
-        .print: "250-TEST-SERVER {$session.conn.socket-port + 42}\r\n";
-        .print: "250-STARTTLS\r\n";
-        .print: "250 OK\r\n";
+    method untap-lines() {
+        with $!line-tap {
+            $!line-tap.close;
+            $!line-tap = Nil;
+        }
     }
-}
 
-multi handle-command('MAIL', $argument, :$session) {
-    with $session.conn {
-        if $argument ~~ / 'FROM:' \S+ / {
+    method start(&finally) {
+        self.tap-lines;
+        $!quit = $!quit.then({ $!line-tap.close; $!conn.close }).then(&finally);
+    }
+
+    multi method handle-command('QUIT', $argument) {
+        $!quit.keep;
+    }
+
+    multi method handle-command('HELO', $argument) {
+        with $!conn {
             .print: "250 OK\r\n";
         }
-        else {
-            .print: "501 Syntax error in parameters or arguments\r\n";
-        }
     }
-}
 
-multi handle-command('RCPT', $argument, :$session) {
-    with $session.conn {
-        if $argument ~~ / 'TO:' \S+ / {
+    multi method handle-command('EHLO', $argument) {
+        with $!conn {
+            .print: "250-TEST-SERVER {.socket-port + 42}\r\n";
+            .print: "250-STARTTLS\r\n" unless $!secure;
             .print: "250 OK\r\n";
         }
-        else {
-            .print: "501 Syntax error in parameters or arguments\r\n";
+    }
+
+    multi method handle-command('MAIL', $argument) {
+        with $!conn {
+            if $argument ~~ / 'FROM:' \S+ / {
+                .print: "250 OK\r\n";
+            }
+            else {
+                .print: "501 Syntax error in parameters or arguments\r\n";
+            }
         }
     }
-}
 
-multi handle-command('DATA', $argument, :$session) {
-    with $session.conn {
-        .print: "250 OK\r\n";
-        $session.data++;
-    }
-}
-
-multi handle-command('STARTTLS', $argument, :$session) {
-    with $session.conn {
-        .print: "250 OK\r\n";
-    }
-
-    try {
-        $session.conn = await IO::Socket::Async::SSL.upgrade-client($session.conn);
-
-        CATCH {
-            .note;
+    multi method handle-command('RCPT', $argument) {
+        with $!conn {
+            if $argument ~~ / 'TO:' \S+ / {
+                .print: "250 OK\r\n";
+            }
+            else {
+                .print: "501 Syntax error in parameters or arguments\r\n";
+            }
         }
     }
-}
 
-multi handle-data('.', :$session) {
-    with $session.conn {
-        .print: "250 OK\r\n";
-        $session.data--;
+    multi method handle-command('DATA', $argument) {
+        with $!conn {
+            .print: "250 OK\r\n";
+            $!data++;
+        }
     }
-}
 
-multi handle-data($, :$session) { }
+    multi method handle-command('STARTTLS', $argument) {
+        with $!conn {
+            .print: "250 OK\r\n";
+        }
+        self.untap-lines;
+
+        IO::Socket::Async::SSL.upgrade-server($!conn,
+            private-key-file => KEY-FILE,
+            certificate-file => CERT-FILE,
+        ).tap: -> $conn {
+            $!conn = $conn;
+
+            self.tap-lines;
+            $!secure++;
+        }
+    }
+
+    multi method handle-data('.', :$session) {
+        with $!conn {
+            .print: "250 OK\r\n";
+            $!data--;
+        }
+    }
+
+    multi method handle-data($) { }
+
+}
 
 my $listener = Promise.new;
-sub start-test-server(--> Promise:D) is export {
+sub start-test-server(:$secure = False --> Promise:D) is export {
     start {
         react {
-            my $tap = do whenever IO::Socket::Async.listen('127.0.0.1', 0) -> $c {
-                my $session = class {
-                    has $.conn is rw;
-                    has $.quit = Promise.new;
-                    has $.data is rw = False;
-                }.new(:conn($c));
+            my $counter = 1;
+            my %sessions;
 
-                whenever $c.Supply.lines -> $line {
-                    if $session.data {
-                        handle-data($line, :$session);
-                    }
-                    else {
-                        my ($command, $argument) = $line.split(' ', 2);
-                        handle-command(:$session, $command.uc, $argument);
+            my sub start-session(:$conn, :$secure) {
+                my $session = TestServerSession.new(
+                    :$conn,
+                    :$secure,
+                );
+
+                %sessions{ $counter } = $session;
+                $session.start({ %sessions{ $counter }:delete });
+                $counter++;
+            }
+
+
+            my $tap = do whenever IO::Socket::Async.listen('127.0.0.1', 0) -> $c {
+                if $secure {
+                    whenever IO::Socket::Async::SSL.upgrade-server($c,
+                        private-key-file => KEY-FILE,
+                        certificate-file => CERT-FILE,
+                    ) -> $conn {
+                        start-session(:$conn, :secure);
                     }
                 }
-
-                whenever $session.quit {
-                    $c.close;
+                else {
+                    start-session(conn => $c);
+                    $c;
                 }
             }
 
