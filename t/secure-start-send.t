@@ -39,6 +39,6 @@ done-testing;
 
 CATCH {
     .note;
-    fail("something went wrong: $_");
+    flunk("something went wrong: $_");
 }
 
