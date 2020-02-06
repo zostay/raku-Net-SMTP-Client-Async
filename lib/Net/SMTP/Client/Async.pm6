@@ -17,6 +17,12 @@ has Lock:D $!socket-lock .= new;
 has $.socket;
 has Bool $.secure;
 has %.keywords;
+has &.debug is rw = &null-debug;
+
+our sub null-debug(|) { }
+our proto std-debug(|) { * }
+multi std-debug('in', $in) { $*ERR.print: "#< $in\n" }
+multi std-debug('out', $out) { $*ERR.print: "#> $out\n" }
 
 method socket(::?CLASS:D: --> Any:D) { $!socket-lock.protect: { $!socket } }
 method secure(::?CLASS:D: --> Bool:D) { $!socket-lock.protect: { $!secure } }
@@ -173,6 +179,8 @@ method quit(::?CLASS:D: --> Promise:D) {
 
 method !begin-listening(::?CLASS:D:) {
     push @!taps, $!socket.Supply.lines.tap: {
+        .comb(/ <-[\n]>+ /).map: &!debug.assuming('in');
+        #$*ERR.print: "#< $_\n";
         when /^
                 $<code> = [ \d ** 3 ]
                 $<continuation> = [ '-' | ' ' ]
@@ -188,6 +196,8 @@ method !begin-listening(::?CLASS:D:) {
     }
 
     push @!taps, $!command.Supply.tap: -> $cmd {
+        $cmd.comb(/ <-[\n]>+ /).map: &!debug.assuming('out');
+        #$*ERR.print: "#> $cmd";
         $!socket-lock.protect: {
             $!socket.print: $cmd;
         }
