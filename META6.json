@@ -25,6 +25,7 @@
   "provides": {
   },
   "depends": [
+    "Auth::SASL",
     "Base64",
     "IO::Socket::Async::SSL"
   ],
