@@ -25,6 +25,7 @@
   "provides": {
   },
   "depends": [
+    "Base64",
     "IO::Socket::Async::SSL"
   ],
   "version": "0.0.0",

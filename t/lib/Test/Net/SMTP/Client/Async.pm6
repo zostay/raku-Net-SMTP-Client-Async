@@ -1,5 +1,6 @@
 use v6;
 
+use Base64;
 use IO::Socket::Async::SSL;
 use Test;
 
@@ -8,9 +9,12 @@ constant CERT-FILE = 't/ssl/cert.pem';
 
 my class TestServerSession {
     has $.secure;
+    has $.auth;
     has $.conn;
     has $.quit = Promise.new;
     has $!data = False;
+    has $!sasl;
+    has %!sasl-state;
 
     has $!line-tap;
 
@@ -20,6 +24,9 @@ my class TestServerSession {
         $!line-tap = $!conn.Supply.lines.tap: -> $line {
             if $!data {
                 self.handle-data($line);
+            }
+            orwith $!sasl {
+                self.handle-sasl($!sasl, $line);
             }
             else {
                 my ($command, $argument) = $line.split(' ', 2);
@@ -53,7 +60,29 @@ my class TestServerSession {
         with $!conn {
             .print: "250-TEST-SERVER {.socket-port + 42}\r\n";
             .print: "250-STARTTLS\r\n" unless $!secure;
+            .print: "250-AUTH PLAIN ANONYMOUS\r\n" if $!secure;
             .print: "250 OK\r\n";
+        }
+    }
+
+    multi method handle-command('AUTH', $argument) {
+        with $!conn {
+            with $!auth {
+                .print: "503 Already authorized.\r\n";
+            }
+            elsif $!secure {
+                if $argument eq 'ANONYMOUS' | 'PLAIN' {
+                    %!sasl-state = ();
+                    $!sasl = $argument;
+                    .print: "334 \r\n";
+                }
+                else {
+                    .print: "504 AUTH mechanism is not supported.\r\n";
+                }
+            }
+            else {
+                .print: "504 AUTH mechanism is not supported.\r\n";
+            }
         }
     }
 
@@ -112,6 +141,43 @@ my class TestServerSession {
 
     multi method handle-data($) { }
 
+    multi method handle-sasl($, '*') {
+        with $!conn {
+            .print: "501 Cancelled.\r\n";
+            $!sasl = Nil;
+        }
+    }
+
+    multi method handle-sasl('ANONYMOUS', $response) {
+        with $!conn {
+            if %!sasl-state<authname> {
+                .print: "501 Confused.\r\n";
+                $!sasl = Nil;
+            }
+            else {
+                my $authname = decode-base64($response, :bin).decode;
+                %!sasl-state<authname> = $authname;
+                .print: "235 Authenticated.\r\n";
+                $!sasl = Nil;
+            }
+        }
+    }
+
+    multi method handle-sasl('PLAIN', $response) {
+        with $!conn {
+            if %!sasl-state<authname> {
+                .print: "501 Confused.\r\n";
+                $!sasl = Nil;
+            }
+            else {
+                my $auth-str = decode-base64($response, :bin).decode;
+                my ($authname, $user, $pass) = $auth-str.split("\0");
+                %!sasl-state = %(:$authname, :$user, :$pass);
+                .print: "235 Authenticated.\r\n";
+                $!sasl = Nil;
+            }
+        }
+    }
 }
 
 my $listener = Promise.new;

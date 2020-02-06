@@ -12,49 +12,59 @@ class Async is Exception {
     method code(--> Int) { $.has-response ?? $!response.code !! Nil }
     method text(--> Str) { $.has-response ?? $!response.text !! Nil }
 
-    method static-message(--> Str:D) { "unknown SMTP error" }
+    method internal-message(--> Str:D) { "unknown SMTP error" }
 
     method message(--> Str:D) {
         with $!response {
             sprintf "%s (%d): %s",
-                $.static-message,
+                $.internal-message,
                 $.code,
                 $.text,
                 ;
         }
         else {
-            $.static-message;
+            $.internal-message;
         }
     }
 }
 
 class Async::Handshake is Async {
-    method static-message(--> Str:D) {
+    method internal-message(--> Str:D) {
         "SMTP EHLO and HELO handshake failed"
     }
 }
 
 class Async::Support is Async {
-    method static-message(--> Str:D) {
-        "SMTP command is not supported";
+    has Str $.command is required;
+    has Str $.detail;
+
+    method internal-message(--> Str:D) {
+        "SMTP command $!command is not supported"
+            ~ do with $!detail { "; $!detail" } else { '' };
     }
 }
 
 class Async::Upgraded is Async {
-    method static-message(--> Str:D) {
+    method internal-message(--> Str:D) {
         "SMTP connection is already secure";
     }
 }
 
 class Async::Secure is Async {
-    method static-message(--> Str:D) {
+    method internal-message(--> Str:D) {
         "SMTP secure handshake failed";
     }
 }
 
 class Async::Send is Async {
-    method static-message(--> Str:D) {
+    method internal-message(--> Str:D) {
         "SMTP mail message send failed";
+    }
+}
+
+class Async::Auth is Async {
+    method internal-message(--> Str:D) {
+        "SMTP AUTH has failed"
     }
 }
 

@@ -2,6 +2,7 @@ use v6;
 
 unit class Net::SMTP::Client::Async;
 
+use Auth::SASL;
 use IO::Socket::Async::SSL;
 use X::Net::SMTP::Client::Async;
 use Net::SMTP::Client::Async::Response;
@@ -99,6 +100,47 @@ method hello(::?CLASS:D: Str:D $domain = "localhost.localdomain" --> Promise:D) 
     }
 }
 
+method authenticate(::?CLASS:D:
+    :%data,
+    :&callback,
+    Auth::SASL::Session :$session,
+    Bool :$require-keyword = True,
+    Str :$service = 'smtp',
+    Str :$host = 'localhost',
+    --> Promise:D
+) {
+    start {
+        # Make sure the server supports AUTH
+        die X::Net::SMTP::Client::Async::Support.new(:command<AUTH>)
+            if $require-keyword and not %!keywords<AUTH>;
+
+        my $sasl = Auth::SASL.new;
+        with $session {
+            $sasl.begin-session($session);
+        }
+        else {
+            $sasl.begin-session(:%data, :&callback);
+        }
+
+        # Make sure the we support a compatible SASL mechanism
+        die X::Net::SMTP::Client::Async::Support.new(
+            command => 'AUTH',
+            detail  => "server supports %!keywords<AUTH>, but client supports $sasl.factory.client-mechanisms()",
+        ) unless $require-keyword and $sasl.supports-client-mechanisms(%!keywords<AUTH>.Mix);
+
+        await self.send-raw-authentication($sasl).then: -> $p {
+            if $p.status ~~ Kept && $p.result.code == 235 {
+                $p.result;
+            }
+            else {
+                die X::Net::SMTP::Client::Async::Auth.new(
+                    response => $p.result,
+                );
+            }
+        }
+    }
+}
+
 method start-tls(::?CLASS:D: Bool:D :$require-keyword = True, *%passthru --> Promise:D) {
     start {
         # If they expect an upgraded connection to be upgraded, let them catch
@@ -107,7 +149,7 @@ method start-tls(::?CLASS:D: Bool:D :$require-keyword = True, *%passthru --> Pro
             if $!secure;
 
         # If keyword checking is required, make sure STARTTLS is not supported
-        die X::Net::SMTP::Client::Async::Support.new
+        die X::Net::SMTP::Client::Async::Support.new(:command<STARTTLS>)
             if $require-keyword and not %!keywords<STARTTLS>;
 
         # TODO Check %!keywords for STARTTLS support
@@ -331,9 +373,18 @@ method DATA(::?CLASS:D: --> Promise:D) {
     self.send-command("DATA");
 }
 
-method send-raw(::?CLASS:D: Str:D $raw --> Promise:D) {
+method send-raw(::?CLASS:D: Str:D $raw, Bool :$base64 = False --> Promise:D) {
     start {
-        $!command.send($raw);
+        use Base64;
+
+        my $data = $raw;
+        if $base64 {
+            $data = encode-base64($data, :str);
+
+            # slightly cheating: we here assume base64 is only used for SASL
+            $data = '=' if $data eq '';
+        }
+        $!command.send("$data\r\n");
         True;
     }
 }
@@ -348,6 +399,42 @@ method send-raw-message(::?CLASS:D: Str:D $message --> Promise:D) {
     start {
         $!command.send("$message\r\n.\r\n");
         self!handle-response;
+    }
+}
+
+method send-raw-authentication(::?CLASS:D:
+    Auth::SASL $sasl,
+    Str :$mechanism = %.keywords<AUTH>.join(' '),
+    Str :$service = '',
+    Str :$host = '',
+    --> Promise:D
+) {
+    start {
+        my $challenge;
+        MECHANISM: for $sasl.attempt-mechanisms($mechanism, :$service, :$host) -> $mech {
+            $challenge = await self.AUTH($mech.mechanism);
+
+            try {
+                repeat {
+                    next MECHANISM unless $challenge.code == 334 | 235;
+
+                    await self.send-raw($mech.step($challenge.text), :base64);
+                    $challenge = await self.receive-raw;
+                } until $mech.is-complete;
+
+                last MECHANISM if $challenge.code == 235;
+
+                CATCH {
+                    when X::Auth::SASL {
+                        self.send-raw('*');
+                        $challenge = await self.receive-raw;
+                        next MECHANISM;
+                    }
+                }
+            }
+        }
+
+        $challenge;
     }
 }
 
