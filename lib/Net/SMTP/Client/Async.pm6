@@ -260,6 +260,10 @@ method !begin(::?CLASS:D:) {
         }
     }
 
+    my $response = await self.receive-raw;
+    die X::Net::SMTP::Client::Async::Connect.new(:$response)
+        unless $response.is-success;
+
     self;
 }
 
@@ -362,11 +366,11 @@ method HELO(::?CLASS:D: Str:D $domain --> Promise:D) {
 }
 
 method MAIL(::?CLASS:D: Str:D $from --> Promise:D) {
-    self.send-command("MAIL", "FROM:$from");
+    self.send-command("MAIL", "FROM:<$from>");
 }
 
 method RCPT(::?CLASS:D: Str:D $to --> Promise:D) {
-    self.send-command("RCPT", "TO:$to");
+    self.send-command("RCPT", "TO:<$to>");
 }
 
 method DATA(::?CLASS:D: --> Promise:D) {
@@ -500,7 +504,7 @@ Net::SMTP::Client::Async - asynchronous communication client for SMTP
 
     use Net::SMTP::Client::Async;
 
-    with await Net::SMTP::Client::Async.connect('smtp.gmail.com', 465, :secure) {
+    with await Net::SMTP::Client::Async.connect(:host<smtp.gmail.com>, :port(465), :secure) {
         await .hello;
 
         my $message = q:to/END_OF_MESSAGE/;
@@ -541,10 +545,12 @@ For example, consider this program which will connect to an ESMTP server on port
 
     use Net::SMTP::Client::Async;
 
-    my $smtp = Net::SMTP::Client::Async.connect('smtp.gmail.com', 587);
+    my $smtp = Net::SMTP::Client::Async.connect(
+        :host<smtp.gmail.com>, :port(587),
+    );
 
     await $smtp.hello;
-    await $smtp.start-tls;
+    await $smtp.start-tls(:host<smtp.gmail.com>);
 
     # After TLS, you must say hello again.
     await $smtp.hello;

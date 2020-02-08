@@ -28,6 +28,12 @@ class Async is Exception {
     }
 }
 
+class Async::Connect is Async {
+    method internal-message(--> Str:D) {
+        "SMTP server reports error on connect"
+    }
+}
+
 class Async::Handshake is Async {
     method internal-message(--> Str:D) {
         "SMTP EHLO and HELO handshake failed"

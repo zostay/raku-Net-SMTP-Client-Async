@@ -88,7 +88,7 @@ my class TestServerSession {
 
     multi method handle-command('MAIL', $argument) {
         with $!conn {
-            if $argument ~~ / 'FROM:' \S+ / {
+            if $argument ~~ /^ 'FROM:<' <-[>]>+ '>' $/ {
                 .print: "250 OK\r\n";
             }
             else {
@@ -99,7 +99,7 @@ my class TestServerSession {
 
     multi method handle-command('RCPT', $argument) {
         with $!conn {
-            if $argument ~~ / 'TO:' \S+ / {
+            if $argument ~~ /^ 'TO:<' <-[>]>+ '>' $/ {
                 .print: "250 OK\r\n";
             }
             else {
@@ -192,6 +192,8 @@ sub start-test-server(:$secure = False --> Promise:D) is export {
                     :$conn,
                     :$secure,
                 );
+
+                $conn.print("220 I am not really an SMTP server\r\n");
 
                 %sessions{ $counter } = $session;
                 $session.start({ %sessions{ $counter }:delete });
