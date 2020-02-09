@@ -580,7 +580,9 @@ Now consider a similar program, but written solely using the low-level interface
 
     use Net::SMTP::Client::Async;
 
-    my $smtp = Net::SMTP::Client::Async.connect('smtp.gmail.com', 587);
+    my $smtp = Net::SMTP::Client::Async.connect(
+        :host<smtp.gmail.com>, :port(587),
+    );
 
     my $ehlo = await $smtp.EHLO('localhost.localdomain');
 
@@ -596,7 +598,7 @@ Now consider a similar program, but written solely using the low-level interface
     $smtp.clear-keywords;
 
     my $upgrade = try {
-        await $smtp.upgrade-client;
+        await $smtp.upgrade-client(:host<smtp.gmail.com>);
 
         CATCH {
             default {
@@ -633,25 +635,25 @@ Now consider a similar program, but written solely using the low-level interface
     $smtp.QUIT;
     $smtp.disconnect;
 
-These programs are not equivalent as the high-level methods perform additional error checking and such that is not being deon in the second program. This second program is just for illustration purposes.
+These programs are not equivalent as the high-level methods perform additional error checking and such that is not being deon in the second program. However, the second program illustrates what is possible.
 
-The primary difference between the high-level and low-level APIs is that the high-level API provides errors through C<X::Net::SMTP::Client::Async> exceptions. The low-level API, on the other hand does no error checking and leaves it to the developer to do the error checking. You can do that by looking at the returned C<Net::SMTP::Client::Async::Response> and checking the details of that response, which includes the response code, the full text of the response (which may span multiple lines for some commands, but has the code parts at the start of every line removed), and some convenience methods for detecting success and errors.
+Aside from the change in interface, the greatest difference between the high-level and low-level APIs is that the high-level API provides errors through C<X::Net::SMTP::Client::Async> exceptions. The low-level API, on the other hand does no error checking and leaves it to the developer to do the error checking. You can do that by looking at the returned C<Net::SMTP::Client::Async::Response> and checking the details of that response, which includes the response code, the full text of the response (which may span multiple lines for some commands, but has the code parts at the start of every line removed), and some convenience methods for detecting success and errors.
 
 The only exception to the no error checking rule is the L<.upgrade-client|#method upgrade-client> method. This is due to the fact that this is a call-out to the method with the same name in L<IO::Socket::Async::SSL>, which passes SSL exception from failed SSL negotiation through to the caller.
 
-The other difference between the high-level and low-level interfaces is that it is possible for the object to enter a state that is not consistent with the connection. The high-level interface works harder to prevent this by perform the state transitions required automatically.
+Another difference between the high-level and low-level interfaces is that the high-level interface guarantees thread safety. The high-level interface works to keep the object and connection consistent and prevents the state from being corrupted across threads. The low-level interface provides fewer guarantees.
 
-For example, consider the situation where you use L<.STARTTLS|#method STARTTLS> to request SSL negotiation and receive a favorable 250 code response. However, you then call another method other than C<.upgrade-client>. Unless you have a non-conforming SMTP server, your client is almost certainly in the wrong state compared to the server. On the other hand, this also means you can use features of SMTP that the high-level interface does not implement or permit, which is the point.
+For example, consider the situation where you use L<.STARTTLS|#method STARTTLS> to request SSL negotiation and receive a favorable 250 code response. However, you then call another method other than C<.upgrade-client>. If you do that, your client will be in the wrong state compared to the server. On the other hand, this also means you can use features of SMTP that the high-level interface does not implement or permit, which is the primary purpose of the low-level interface.
 
-If you have a SMTP server where you need to do something that takes you off the beaten path of sending a fairly simple email message, you should be able to do that with this library. For example, if you use the high-level C<.start-tls> command and SSL negotiation fails, the connection will close. However, if you use the low-level C<.STARTTLS> and C<.upgrade-client> methods, you can implement a client that gracefully recovers from a failure to negotiate SSL.
+If you have an SMTP server where you need to do something that takes you off the beaten path of sending a fairly simple email message, you should be able to do that with this library.
 
 =head1 CONCURRENCY
 
 This class is intended to be thread safe. However, it is also fairly immature, so there might be some bugs with that.
 
-Internally, any command sent to the SMTP socket is queued up using a L<Channel>. This means all commands will be executed in the order they are received. Commands may be sent before the response has been received if you do not make sure to C<await> on the previous method call before calling another. For this resonse, it is recommended that you perform an C<await> prior to calling another method.
+Internally, any command sent to the SMTP socket is queued up using a L<Channel>. This means all commands will be executed in the order they are received. Commands may be sent before the response has been received if you do not make sure to C<await> on the previous method call before calling another, which could result in unrecoverable errors. For this reason, it is recommended that you perform an C<await> prior to calling another method.
 
-All state within the object is protected by a L<Lock> using a monitor pattern. The state of the object returned by the accessors will never be partially constructed. However, it is still possible to use the returned state in an unsafe way if a method, which changes state is called. This includes the following methods:
+Internal state within the object is protected by a L<Lock> using a monitor pattern. The state of the object returned by the accessors will never be partially constructed. However, it is still possible to use the returned state in an unsafe way if a method, which changes state is called. This includes the following methods:
 
 =item L<.hello|#method hello>
 
@@ -659,7 +661,7 @@ All state within the object is protected by a L<Lock> using a monitor pattern. T
 
 =item L<.upgrade-client|#method upgrade-client>
 
-Other methods may also change state, but they will be clearly documented below.
+Other methods may also change state. Those changes are clearly documented in each method's documentation.
 
 Additional precautions should be taken around the calls of these methods or any state-changing methods to make sure that the operation is complete I<before> accessing the attributes of the method. Otherwise, you I<will> end up with thread safety problems.
 
@@ -710,7 +712,7 @@ That constructed object will not have performed the initial SMTP handshake. Ther
 
 On success, this method updates the state of this object by either setting or clearing the C<keywords>.
 
-This method will attempt to perform an ESMTP handshake (i.e., C<EHLO>) with the SMTP server. If that handshake succeeds, it will parse the response and place all the announced keywords and paramters into L<.keywords|#method keywords>.
+This method will attempt to perform an ESMTP handshake (i.e., C<EHLO>) with the SMTP server. If that handshake succeeds, it will parse the response and place all the announced keywords and paramters into the L<.keywords attribute|#method keywords>.
 
 If the ESMTP handshake fails, this method will attempt to fallback on SMTP handshake (i.e., C<HELO>). In this case, C<.keywords> will remain empty.
 
