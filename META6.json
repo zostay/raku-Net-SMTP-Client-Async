@@ -1,36 +1,36 @@
 {
-  "license": "Artistic-2.0",
+  "source-url": "git://github.com/zostay/raku-Net-SMTP-Client-Async.git",
+  "name": "Net::SMTP::Client::Async",
+  "meta-version": "0",
   "description": "Asynchronous SMTP client",
-  "tags": [
-
-  ],
   "support": {
     "source": null
   },
-  "meta-version": "0",
+  "build-depends": [
+  ],
+  "license": "Artistic-2.0",
   "test-depends": [
     "Test",
     "Test::META"
   ],
-  "build-depends": [
-
-  ],
-  "authors": [
-    "Sterling Hanenkamp <hanenkamp@cpan.org>"
-  ],
-  "source-url": "git://github.com/zostay/raku-Net-SMTP-Client-Async.git",
   "resources": [
-
   ],
-  "provides": {
-  },
   "depends": [
     "Auth::SASL",
     "Base64",
     "IO::Socket::Async::SSL"
   ],
-  "version": "0.0.0",
+  "perl": "6.c",
+  "tags": [
+  ],
   "auth": null,
-  "name": "Net::SMTP::Client::Async",
-  "perl": "6.c"
+  "version": "0.0.1",
+  "authors": [
+    "Sterling Hanenkamp <hanenkamp@cpan.org>"
+  ],
+  "provides": {
+    "X::Net::SMTP::Client::Async": "lib/X/Net/SMTP/Client/Async.pm6",
+    "Net::SMTP::Client::Async": "lib/Net/SMTP/Client/Async.pm6",
+    "Net::SMTP::Client::Async::Response": "lib/Net/SMTP/Client/Async/Response.pm6"
+  }
 }

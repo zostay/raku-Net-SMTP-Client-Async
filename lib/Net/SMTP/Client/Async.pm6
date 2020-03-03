@@ -1,6 +1,6 @@
 use v6;
 
-unit class Net::SMTP::Client::Async:ver<0.0.0>:auth<github:zostay>;
+unit class Net::SMTP::Client::Async:ver<0.0.1>:auth<github:zostay>;
 
 use Auth::SASL;
 use IO::Socket::Async::SSL;
