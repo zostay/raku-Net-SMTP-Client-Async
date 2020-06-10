@@ -8,8 +8,8 @@ SYNOPSIS
 
     use Net::SMTP::Client::Async;
 
-    with await Net::SMTP::Client::Async.connect(:host<smtp.gmail.com>, :port(465), :secure) {
-        await .hello;
+    with await Net::SMTP::Client::Async.connect(:host<smtp.gmail.com>, :port(465), :secure) -> $smtp {
+        await $smtp.hello;
 
         my $message = q:to/END_OF_MESSAGE/;
         To: Sterling <hanenkamp@cpan.org>
@@ -19,18 +19,18 @@ SYNOPSIS
         Goodbye.
         END_OF_MESSAGE
 
-        await .send-message(
+        await $smtp.send-message(
             from => "hanenkamp@cpan.org",
             to   => [ "hanenkamp@cpan.org" ],
             :$message,
         );
 
-        .quit;
+        $smtp.quit;
 
         CATCH {
             when X::Net::SMTP::Client::Async {
                 note "Unable to send email message: $_";
-                .quit
+                $smtp.quit
             }
         }
     }
